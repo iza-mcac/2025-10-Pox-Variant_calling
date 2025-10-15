@@ -1,0 +1,258 @@
+---
+title: "variant_calling"
+author: "Iza"
+date: "2024-12-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+
+BiocManager::install(c("Rsamtools", "VariantAnnotation", "GenomicAlignments", "GenomicRanges"))
+
+```
+
+
+```{r}
+library(Rsamtools)
+library(VariantAnnotation)
+library(GenomicAlignments)
+library(GenomicRanges)
+library(tidyverse)
+library(stringr)
+library(vcfR)
+library(VariantAnnotation)
+library(AnnotationHub)
+library(ggplot2)
+library(biomaRt)
+
+```
+
+
+Convert .sma to .bam
+```{r}
+# Specify file paths
+sam_file <- "D_clone.sam"
+bam_file <- "D_clone"
+asBam(file = sam_file, destination = bam_file)
+#######
+sam_file <- "E_clone.sam"
+bam_file <- "E_clone"
+asBam(file = sam_file, destination = bam_file)
+######
+sam_file <- "I_clone.sam"
+bam_file <- "I_clone"
+asBam(file = sam_file, destination = bam_file)
+
+```
+
+Sort the .bam
+
+```{r}
+bam_file <- "D_clone.bam"
+sorted_bam_file <- "D_clone.sorted.bam"
+sortBam(bam_file, destination = sub(".bam$", ".sorted", bam_file))
+indexBam(sorted_bam_file)
+
+bam_file <- "E_clone.bam"
+sorted_bam_file <- "E_clone.sorted.bam"
+sortBam(bam_file, destination = sub(".bam$", ".sorted", bam_file))
+indexBam(sorted_bam_file)
+
+bam_file <- "I_clone.bam"
+sorted_bam_file <- "I_clone.sorted.bam"
+sortBam(bam_file, destination = sub(".bam$", ".sorted", bam_file))
+indexBam(sorted_bam_file)
+
+```
+
+get the reference
+```{r}
+ref_genome <- "all_nucleotide.fasta"
+system(paste("samtools faidx", ref_genome))
+
+bam_files <- c("D_clone.sorted.bam", "E_clone.sorted.bam", "I_clone.sorted.bam")
+
+```
+
+Output to store vcf
+```{r}
+output_dir <- "output_vcf/"
+
+```
+
+variant calling
+```{r}
+sorted_bam_file <- "I_clone.sorted.bam"
+reference_genome <- "MPOX_clade2_b1_ref.fasta"
+output_vcf <- "output_vcf/I_clone_filtered.vcf"
+
+system(paste(
+  "bcftools mpileup -f", reference_genome,"-d 0", sorted_bam_file, 
+  "| bcftools call -mv -Oz -o", output_vcf
+))
+system(paste("bcftools view -Oz -o", paste0(output_vcf, ".gz"), output_vcf))
+
+system(paste("bcftools index", paste0(output_vcf, ".gz")))
+```
+
+
+Import the vcf to R
+```{r}
+vcf_files <- list(
+  D_clone = "output_vcf/D_clone_filtered.vcf.gz",
+  E_clone = "output_vcf/E_clone_filtered.vcf.gz",
+  I_clone = "output_vcf/I_clone_filtered.vcf.gz"
+)
+
+vcf_list <- lapply(vcf_files, read.vcfR)
+
+```
+
+Extract unique
+```{r}
+extract_unique_variants <- function(vcf_list) {
+  all_variants <- do.call(rbind, lapply(names(vcf_list), function(clone_name) {
+    vcf <- vcf_list[[clone_name]]
+    data.frame(
+      Clone = clone_name,
+      Chromosome = vcf@fix[, "CHROM"],
+      Position = as.numeric(vcf@fix[, "POS"]),
+      Ref = vcf@fix[, "REF"],
+      Alt = vcf@fix[, "ALT"]
+    )
+  }))
+  
+  # Create a unique identifier for each variant
+  all_variants$Variant <- paste(all_variants$Chromosome, all_variants$Position, all_variants$Ref, all_variants$Alt, sep = "_")
+  
+  # Identify variants unique to each clone
+  unique_variants <- all_variants[!duplicated(all_variants$Variant) & !duplicated(all_variants$Variant, fromLast = TRUE), ]
+  
+  # Split by clone for easy access
+  split(unique_variants, unique_variants$Clone)
+}
+
+
+unique_variants <- extract_unique_variants(vcf_list)
+
+
+```
+
+
+
+
+Visualize unique and common
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Function to extract both unique and common variants
+extract_variants <- function(vcf_list) {
+  all_variants <- do.call(rbind, lapply(names(vcf_list), function(clone_name) {
+    vcf <- vcf_list[[clone_name]]
+    data.frame(
+      Clone = clone_name,
+      Chromosome = vcf@fix[, "CHROM"],
+      Position = as.numeric(vcf@fix[, "POS"]),
+      Ref = vcf@fix[, "REF"],
+      Alt = vcf@fix[, "ALT"]
+    )
+  }))
+  
+  all_variants$Variant <- paste(all_variants$Chromosome, all_variants$Position, all_variants$Ref, all_variants$Alt, sep = "_")
+  
+  # Tag unique and common variants
+  all_variants <- all_variants %>%
+    group_by(Variant) %>%
+    mutate(Variant_Type = ifelse(n() == 1, "Unique", "Common")) %>%
+    ungroup()
+  
+  all_variants
+}
+
+# Extract and tag variants
+all_variants <- extract_variants(vcf_list)
+
+
+# Plot unique and common variants
+ggplot(all_variants, aes(x = Chromosome, y = Position, color = Variant_Type)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(
+    y = "Position",
+    color = "Variant Type"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  facet_wrap(~Clone) 
+
+write.csv(all_variants,"variants_common_and_unique.csv")
+
+cowplot::ggsave2("variants_dotplot.pdf", height = 8, width = 5)
+
+```
+
+Use blastres_dic_allpoxvirus
+
+```{r}
+
+filtered_blastn <- blastres_dic_allpoxvirus %>%
+  filter(blastn_score == 100)  
+
+all_variants_with_genes <- all_variants %>%
+  rowwise() %>%
+  mutate(
+    gene_info = list(blastres_dic_allpoxvirus %>%
+                       filter(Position >= start & Position <= end) %>%
+                       dplyr::select(cds_name, virus, blastn_score, start, end, description))  
+  ) %>%
+  unnest(gene_info) %>%  
+  distinct()  
+
+write.csv(all_variants_with_genes,"variants_common_and_unique_wgenes.csv")
+
+```
+
+try a sankey + dotplot
+```{r}
+library(ggalluvial)
+all_variants_with_genes_count <- all_variants_with_genes %>%
+  group_by(Variant_Type, gene) %>%
+  summarise(count = n(), .groups = "drop")
+
+
+
+all_variants_with_genes_count %>%
+  filter(Variant_Type == "Unique") %>%
+  ggplot(aes(axis1 = Variant_Type, axis2 = gene, y = count)) +
+  geom_alluvium(aes(fill = Variant_Type)) +
+  geom_stratum(aes(fill = gene)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+all_variants_with_genes_count %>%
+  ggplot(aes(x = Clone, stratum = gene, alluvium = gene, y = count)) +
+  geom_alluvium(aes(fill = gene), alpha = 0.8, width = 0.3) +
+  geom_stratum(aes(fill = gene), alpha = 0.6, width = 0.3) +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3, vjust = -1) +
+  theme_minimal()
+
+```
+
+Categorizing variants
+```{r}
+gtf_file <- "blast_res/reference_monkeypox/zaire-ref.fasta" # Replace with your actual path
+
+# Import the GTF/GFF file
+if (grepl("\\.gtf$", gtf_file, ignore.case = TRUE)) {
+  txdb <- makeTxDbFromGFF(gtf_file, format = "gtf")
+} else if (grepl("\\.gff$", gtf_file, ignore.case = TRUE) || grepl("\\.gff3$", gtf_file, ignore.case = TRUE)) {
+  txdb <- makeTxDbFromGFF(gtf_file, format = "gff3")
+} else {
+  stop("Input file must be a GTF or GFF file.")
+}
+
+```

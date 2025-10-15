@@ -1,0 +1,139 @@
+---
+title: "addingclade2ref"
+author: "Iza"
+date: "2024-12-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(isoformic)
+library(stringr)
+library(ghibli)
+```
+
+Import the things
+
+```{r}
+library(readr)
+blast_results_clade2 <- read_delim("blast_res/blast_results_clade2b1.txt", 
+    delim = "\t", escape_double = FALSE, 
+    trim_ws = TRUE, col_names = FALSE)
+
+```
+
+renaming
+
+```{r}
+blast_res_clade2_colsIneeed<-blast_results_clade2 %>% select(1,2,3,9,10,11,12)
+
+names(blast_res_clade2_colsIneeed) <- c("cds_name", "clone", "blastn_score", "start", "end", "evalue", "bitscore")
+```
+
+Add the score
+```{r}
+
+
+blastres_onlymonkeypox_ref_clade2 <-blast_res_clade2_colsIneeed %>% filter(cds_name %in% monkeypoxvirus$name)
+
+blastres_allvirus
+
+blastres_allvirus_ref_clade2 <-blast_res_clade2_colsIneeed %>% filter(cds_name %in% blastres_dic_allpoxvirus$cds_name)
+
+blastres_allvirus_ref_clade2 <- blastres_allvirus_ref_clade2 %>%
+  mutate(score_group = case_when(
+    blastn_score < 70 ~ "<70%",
+    blastn_score > 70 & blastn_score <= 85 ~ "70-85%",
+    blastn_score > 85 & blastn_score <= 95 ~ "85-95%",
+    blastn_score > 95 & blastn_score <= 98 ~ "95-98%",
+    blastn_score > 98 & blastn_score <= 99 ~ "98-99%",
+    blastn_score > 99 & blastn_score <= 100 ~ "99-100%",
+    TRUE ~ NA_character_  # If none of the conditions are met, return NA
+  ))
+
+blastres_onlymonkeypox_ref <- blastres_onlymonkeypox_ref %>%
+  mutate(score_group = case_when(
+    blastn_score < 95 ~ "<95%",
+    blastn_score >= 95 & blastn_score <= 98 ~ "95-98%",
+    blastn_score > 98 & blastn_score <= 99 ~ "98-99%",
+    blastn_score > 99 & blastn_score <= 100 ~ "99-100%",
+    TRUE ~ NA_character_  # If none of the conditions are met, return NA
+  ))
+
+blastres_dic_monkeypoxonly_ref <-blastres_onlymonkeypox_ref %>% left_join(monkeypoxvirus, by = c("cds_name"="name"))
+
+blastres_allvirus_ref_clade2 <-blastres_allvirus_ref_clade2 %>% left_join(all_annotated, by = c("cds_name"="name"))
+
+gene_cds_ref_all <- blastres_dic_allpox_ref[grep("gene", blastres_dic_allpox_ref$description, ignore.case = TRUE), ]
+```
+
+Mine beside the ref
+
+```{r}
+graph_mine_clade2<- blastres_allvirus_ref_clade2 %>%
+  ggplot(aes(fill = score_group))+
+  geom_bar(aes(x = clone), position = "fill", col = "black")+
+  theme_bw()+
+  scale_fill_ghibli_d("PonyoMedium", direction = -1)
+
+graph_mine<- gene_cds_allpox %>%
+  ggplot(aes(fill = score_group))+
+  geom_bar(aes(x = clone), position = "fill", col = "black")+
+  theme_bw()+
+  scale_fill_ghibli_d("PonyoMedium", direction = -1)
+
+graph_ref <- gene_cds_ref_all %>%
+  ggplot(aes(fill = score_group))+
+  geom_bar(aes(x = clone), position = "fill", col = "black")+
+  theme_bw()+
+  scale_fill_ghibli_d("PonyoMedium", direction = -1)
+
+
+ggpubr::ggarrange(graph_ref, graph_mine, graph_mine_clade2,
+          ncol = 3, nrow = 1)
+
+cowplot::ggsave2("Plots/barplot_blastnresultpercloneandzaire_clade2_onlygenes_allpox.pdf", width = 12, height = 4)
+
+```
+
+Now only monkeypox genes
+```{r}
+monkeypoxvirus
+
+all_score_groups <- unique(c(
+  unique(blastres_allvirus_ref_clade2$score_group),
+  unique(gene_cds_allpox$score_group),
+  unique(gene_cds_ref_all$score_group)
+))
+
+# Create a named color palette using a Ghibli palette
+color_palette <- ghibli_palettes$PonyoMedium[c(2,3,4,5,6,7)]
+names(color_palette) <- all_score_groups
+
+graph_mine_clade2<- blastres_allvirus_ref_clade2 %>%
+  filter(cds_name %in%monkeypoxvirus$name) %>%
+  ggplot(aes(fill = score_group))+
+  geom_bar(aes(x = clone), position = "fill", col = "black")+
+  theme_bw()+
+  scale_fill_manual(values = color_palette)
+
+graph_mine<- gene_cds_allpox %>%
+  filter(cds_name %in%monkeypoxvirus$name) %>%
+  ggplot(aes(fill = score_group))+
+  geom_bar(aes(x = clone), position = "fill", col = "black")+
+  theme_bw()+
+  scale_fill_manual(values = color_palette)
+
+graph_ref <- gene_cds_ref_all %>%
+  filter(cds_name %in%monkeypoxvirus$name) %>%
+  ggplot(aes(fill = score_group))+
+  geom_bar(aes(x = clone), position = "fill", col = "black")+
+  theme_bw()+
+  scale_fill_manual(values = color_palette)
+ggpubr::ggarrange(graph_ref, graph_mine, graph_mine_clade2,
+          ncol = 3, nrow = 1)
+
+cowplot::ggsave2("Plots/barplot_blastnresultpercloneandzaire_clade2_onlygenes_onlymonkeypox.pdf", width = 12, height = 4)
+
+```
+
