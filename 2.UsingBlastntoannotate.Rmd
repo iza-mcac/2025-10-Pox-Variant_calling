@@ -1,0 +1,190 @@
+Run blastn for everything
+Make the blastdb
+-in is the genome you wnat to use for db and out the name it will have, first I did for your samples
+
+Run the R script only for the orthopox
+
+```Bash
+makeblastdb -in mafft/witt_jonatas_clones.fa -dbtype nucl -parse_seqids -out blast_res/genome_db
+
+makeblastdb -in MPOX_clade2_b1_ref.fasta -dbtype nucl -parse_seqids -out blast_res/MPOX_clade2_b1_genome_db
+
+blastx -query /home/flaviahcleto/carlorosaea/genomics/montagem/montagem_oficial/contigs.fasta -db nr -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" -out /home/izamamede/blast_helenozyma.txt -num_threads 8
+
+```
+
+Running blastn on them using our db, the outfmt is the format I want it to get out as
+```Bash
+blastn -query all_nucleotide.fasta -db blast_res/MPOX_clade2_b1_genome_db -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" -out blast_res/blast_results_clade2b1.txt -num_threads 8
+```
+
+```Bash
+blastn -query all_nucleotide.fasta -db blast_res/genome_db -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" -out blast_res/blast_results_2.txt
+```
+
+Run the same blastn against the reference
+
+```Bash
+blastn -query all_nucleotide.fasta -db blast_res/genome_db_zaire -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" -out blast_res/blast_results_zaire.txt
+```
+
+
+
+combine multiple fastas
+```Bash
+# Iterate over each gene name
+for ACCESSION in `cat all_gene_names.txt`;
+do 
+    # Find files for the current gene name
+    files=$(ls -1 | grep "_${ACCESSION}" | sort)
+
+    # Combine files and save to a new file for the gene name
+    cat $files > combined_${ACCESSION}.fasta
+done
+
+```
+This way it saved the three fasta always as D, E and I always on this order
+
+Now to the same blastn with a reference monkeypox genome so I can have the comparison of yours versus the reference
+
+download reference monkeypox genome
+
+
+makeblasdb
+```Bash
+makeblastdb -in reference_monkeypox/zaire-ref.fasta -dbtype nucl -parse_seqids -out genome_db_zaire/
+```
+
+Run the same blastn against the reference
+
+```Bash
+blastn -query all_nucleotide.fasta -db blast_res/genome_db_zaire -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" -out blast_res/blast_results_zaire.txt
+```
+
+
+combine the combined with Zaire ref
+
+```Bash
+# Iterate over each gene name
+for ACCESSION in `cat all_gene_names.txt`;
+do 
+    # Find files for the current gene name
+    files=$(ls -1 | grep "^combined_${ACCESSION}\|^Zaire_${ACCESSION}" | sort)
+
+    # Combine files and save to a new file for the gene name
+    cat $files > all_${ACCESSION}.fasta
+done
+
+```
+
+Run mafft over all sequences just as confirmation
+
+```Bash
+#!/bin/bash
+
+# Define the input directory containing FASTA files
+input_dir="genes_fasta"
+
+# Define the output directory to store the aligned FASTA files
+output_dir="mafft/by_gene"
+
+# Iterate over each gene name
+for gene_name in `cat genes_fasta/all_gene_names.txt`; do
+    # Define the input and output file paths
+    input_file="${input_dir}/all_${gene_name}.fasta"
+    output_file="${output_dir}/${gene_name}_aln.fasta"
+
+    # Run MAFFT to align the sequences
+    mafft --auto "${input_file}" > "${output_file}"
+
+    echo "Alignment completed for ${gene_name}."
+done
+
+echo "All files aligned successfully."
+
+
+```
+
+Combine for the non-monkeypox genes
+
+```Bash
+# Iterate over each gene name
+for ACCESSION in `cat all_nonpox.txt`;
+do 
+    # Find files for the current gene name
+    files=$(ls -1 | grep "_${ACCESSION}" | sort)
+
+    # Combine files and save to a new file for the gene name
+    cat $files > combined_${ACCESSION}.fasta
+done
+
+```
+
+combine those with zaire
+
+```Bash
+# Iterate over each gene name
+for ACCESSION in `cat all_nonpox.txt`;
+do 
+    # Find files for the current gene name
+    files=$(ls -1 | grep "^combined_${ACCESSION}\|^Zaire_${ACCESSION}" | sort)
+
+    # Combine files and save to a new file for the gene name
+    cat $files > all_${ACCESSION}.fasta
+done
+
+```
+
+Now align all the combined also
+
+```Bash
+#!/bin/bash
+
+# Define the input directory containing FASTA files
+input_dir="genes_fasta"
+
+# Define the output directory to store the aligned FASTA files
+output_dir="mafft/by_gene"
+
+# Iterate over each gene name
+for gene_name in `cat genes_fasta/all_gene_names.txt`; do
+    # Define the input and output file paths
+    input_file="${input_dir}/all_${gene_name}.fasta"
+    output_file="${output_dir}/${gene_name}_aln.fasta"
+
+    # Run MAFFT to align the sequences
+    mafft --auto "${input_file}" > "${output_file}"
+
+    echo "Alignment completed for ${gene_name}."
+done
+
+echo "All files aligned successfully."
+
+
+```
+
+
+Combine all fasta into a single multifasta
+```Bash
+#!/bin/bash
+input_folder="path/to/your/folder" 
+output_file="combined.fasta" 
+
+> "$output_file"
+
+for file in "$input_folder"/*.fasta; do
+    gene_name=$(basename "$file" .fasta | awk -F'[_.]' '{print $(NF-1)}')
+
+    if [[ -s "$file" ]]; then
+        awk -v gene="$gene_name" '
+            BEGIN {printed = 0}
+            /^>/ {if (printed) print ""; print ">" gene; printed = 1; next}
+            {print}' "$file" >> "$output_file"
+    else
+        echo "Skipping empty or missing file: $file"
+    fi
+done
+
+echo "Combined FASTA written to $output_file"
+
+```
