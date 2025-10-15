@@ -1,0 +1,26 @@
+First have to align everything against the reference genome
+```Bash
+D-MPXV_S179_L001_R1_001.fastq
+D-MPXV_S179_L001_R2_001.fastq
+
+E-MPXV_S180_L001_R1_001.fastq
+E-MPXV_S180_L001_R2_001.fastq
+
+I-MPXV_S181_L001_R1_001.fastq
+I-MPXV_S181_L001_R2_001.fastq
+```
+
+Build a bwa reference
+```Bash
+bwa index MPOX_clade2_b1_ref.fasta -o index_bwa
+```
+
+Run bwa
+```Bash
+bwa mem index_bwa/MPOX_clade2_b1_ref rawdata/D-MPXV_S179_L001_R1_001.fastq rawdata/D-MPXV_S179_L001_R2_001.fastq > D_clone.sam
+
+bwa mem index_bwa/MPOX_clade2_b1_ref rawdata/E-MPXV_S180_L001_R1_001.fastq rawdata/E-MPXV_S180_L001_R2_001.fastq > E_clone.sam
+
+bwa mem index_bwa/MPOX_clade2_b1_ref rawdata/I-MPXV_S181_L001_R1_001.fastq rawdata/I-MPXV_S181_L001_R2_001.fastq > I_clone.sam
+
+```
